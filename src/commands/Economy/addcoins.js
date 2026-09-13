@@ -1,5 +1,7 @@
 import { SlashCommandBuilder } from 'discord.js';
 import { addMoney } from '../../utils/economy.js';
+import { withErrorHandling } from '../../utils/errorHandler.js';
+import { InteractionHelper } from '../../utils/interactionHelper.js';
 
 const OWNER_ROLE_ID = '1541092291463090296';
 
@@ -18,16 +20,16 @@ export default {
                 .setName('amount')
                 .setDescription('Amount of coins')
                 .setRequired(true)
-        )
-        .setDMPermission(false),
+        ),
 
-    async execute(interaction, config, client) {
-        const member = interaction.member;
+    execute: withErrorHandling(async (interaction, config, client) => {
 
-        if (!member.roles.cache.has(OWNER_ROLE_ID)) {
-            return interaction.reply({
-                content: '❌ You do not have permission to use this command.',
-                ephemeral: true
+        const deferred = await InteractionHelper.safeDefer(interaction);
+        if (!deferred) return;
+
+        if (!interaction.member.roles.cache.has(OWNER_ROLE_ID)) {
+            return InteractionHelper.safeEditReply(interaction, {
+                content: '❌ You do not have permission to use this command.'
             });
         }
 
@@ -35,9 +37,8 @@ export default {
         const amount = interaction.options.getInteger('amount');
 
         if (amount <= 0) {
-            return interaction.reply({
-                content: '❌ Amount must be greater than 0.',
-                ephemeral: true
+            return InteractionHelper.safeEditReply(interaction, {
+                content: '❌ Amount must be greater than 0.'
             });
         }
 
@@ -49,8 +50,9 @@ export default {
             'wallet'
         );
 
-        await interaction.reply({
-            content: `✅ Added **${amount}** coins to ${targetUser}.`
+        await InteractionHelper.safeEditReply(interaction, {
+            content: `✅ Added $${amount.toLocaleString()} to ${targetUser}.`
         });
-    }
+
+    }, { command: 'addcoins' })
 };
