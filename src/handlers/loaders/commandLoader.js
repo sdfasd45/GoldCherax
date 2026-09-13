@@ -3,22 +3,18 @@ import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { Collection } from 'discord.js';
 import logger from '../../utils/logger.js';
-import botConfig from '../../config/botConfig.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-// Your Discord server ID
 const TARGET_GUILD_ID = '1541092100056027136';
-
 const MAX_COMMANDS = 100;
 const COMMAND_WARNING_THRESHOLD = 90;
 
-/**
- * Recursively find JavaScript command files.
- */
 async function getAllFiles(directory, fileList = []) {
-    const entries = await fs.readdir(directory, { withFileTypes: true });
+    const entries = await fs.readdir(directory, {
+        withFileTypes: true
+    });
 
     for (const entry of entries) {
         const fullPath = path.join(directory, entry.name);
@@ -38,9 +34,6 @@ async function getAllFiles(directory, fileList = []) {
     return fileList;
 }
 
-/**
- * Get subcommand information.
- */
 function getSubcommandInfo(commandData) {
     const options = commandData.options || [];
 
@@ -54,9 +47,6 @@ function getSubcommandInfo(commandData) {
     };
 }
 
-/**
- * Load all commands into client.commands.
- */
 export async function loadCommands(client) {
     client.commands = new Collection();
 
@@ -84,7 +74,7 @@ export async function loadCommands(client) {
 
             if (client.commands.has(commandName)) {
                 logger.warn(
-                    `Duplicate command "${commandName}" found. Skipping: ${filePath}`
+                    `Duplicate command "${commandName}" found. Skipping.`
                 );
                 continue;
             }
@@ -101,9 +91,11 @@ export async function loadCommands(client) {
 
             logger.info(
                 `Loaded command: ${commandName}` +
-                (subcommandInfo.count
-                    ? ` (${subcommandInfo.count} subcommands)`
-                    : '')
+                (
+                    subcommandInfo.count
+                        ? ` (${subcommandInfo.count} subcommands)`
+                        : ''
+                )
             );
         } catch (error) {
             logger.error(`Failed to load command file: ${filePath}`, error);
@@ -115,9 +107,6 @@ export async function loadCommands(client) {
     return client.commands;
 }
 
-/**
- * Convert loaded commands into Discord API payloads.
- */
 function collectCommandPayloads(client) {
     const commands = [];
     let totalSubcommands = 0;
@@ -137,13 +126,10 @@ function collectCommandPayloads(client) {
     };
 }
 
-/**
- * Validate commands before registration.
- */
 function validateCommands(commands) {
     if (commands.length > MAX_COMMANDS) {
         throw new Error(
-            `Too many commands: ${commands.length}. Discord allows a maximum of ${MAX_COMMANDS}.`
+            `Too many commands. Discord allows ${MAX_COMMANDS} commands.`
         );
     }
 
@@ -178,67 +164,39 @@ function validateCommands(commands) {
     }
 }
 
-/**
- * Prepare commands for registration.
- */
 function prepareCommandsForRegistration(commands) {
     if (commands.length >= COMMAND_WARNING_THRESHOLD) {
         logger.warn(
-            `You are registering ${commands.length} commands. Discord allows ${MAX_COMMANDS}.`
+            `Registering ${commands.length} commands. Discord allows ${MAX_COMMANDS}.`
         );
     }
 
-    if (commands.length > MAX_COMMANDS) {
-        return commands.slice(0, MAX_COMMANDS);
-    }
-
-    return commands;
+    return commands.slice(0, MAX_COMMANDS);
 }
 
-/**
- * Register commands specifically to your Discord server.
- * Guild commands appear almost immediately.
- */
 async function registerGuildCommands(
     client,
     clientId,
     guildId,
-    commands,
-    totalSubcommands
+    commands
 ) {
     if (!clientId) {
-        throw new Error('CLIENT_ID is required to register commands.');
-    }
-
-    if (!guildId) {
-        throw new Error('GUILD_ID is required to register commands.');
+        throw new Error('CLIENT_ID is missing.');
     }
 
     if (!client.rest) {
-        throw new Error('Discord REST client is not available.');
+        throw new Error('Discord REST client is missing.');
     }
-
-    logger.info(
-        `Registering ${commands.length} commands to guild ${guildId}`
-    );
 
     validateCommands(commands);
 
     const commandsToRegister =
         prepareCommandsForRegistration(commands);
 
-    const commandRoute =
+    const route =
         `/applications/${clientId}/guilds/${guildId}/commands`;
 
-    if (botConfig.commands?.deleteCommands) {
-        logger.info('Deleting existing guild commands...');
-
-        await client.rest.put(commandRoute, {
-            body: []
-        });
-    }
-
-    await client.rest.put(commandRoute, {
+    await client.rest.put(route, {
         body: commandsToRegister
     });
 
@@ -249,30 +207,22 @@ async function registerGuildCommands(
     logger.info('Guild slash commands should appear immediately.');
 }
 
-/**
- * Register all loaded commands.
- */
 export async function registerCommands(client, options = {}) {
     const clientId =
         options.clientId ||
         client.config?.bot?.clientId ||
         process.env.CLIENT_ID;
 
-    const { commands, totalSubcommands } =
-        collectCommandPayloads(client);
+    const { commands } = collectCommandPayloads(client);
 
     await registerGuildCommands(
         client,
         clientId,
         TARGET_GUILD_ID,
-        commands,
-        totalSubcommands
+        commands
     );
 }
 
-/**
- * Reload one command.
- */
 export async function reloadCommand(client, commandName) {
     const oldCommand = client.commands.get(commandName);
 
@@ -283,9 +233,9 @@ export async function reloadCommand(client, commandName) {
     }
 
     const fileUrl = pathToFileURL(oldCommand.filePath).href;
-    const cacheBustedUrl = `${fileUrl}?reload=${Date.now()}`;
+    const reloadUrl = `${fileUrl}?reload=${Date.now()}`;
 
-    const commandModule = await import(cacheBustedUrl);
+    const commandModule = await import(reloadUrl);
     const newCommand = commandModule.default || commandModule;
 
     if (!newCommand?.data || !newCommand?.execute) {
