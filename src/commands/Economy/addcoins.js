@@ -1,29 +1,61 @@
-const OWNER_ROLE_ID = "1541092291463090296";
+import {
+    SlashCommandBuilder,
+    PermissionFlagsBits
+} from 'discord.js';
 
-module.exports = {
-    name: "addcoins",
-    description: "Add coins to a user",
+import { addMoney } from '../../utils/economy.js';
+import { InteractionHelper } from '../../utils/interactionHelper.js';
 
-    async execute(client, message, args) {
+const OWNER_ROLE_ID = '1541092291463090296';
 
-        if (!message.member.roles.cache.has(OWNER_ROLE_ID)) {
-            return message.reply("❌ You don't have permission to use this command.");
+export default {
+    data: new SlashCommandBuilder()
+        .setName('addcoins')
+        .setDescription('Add coins to a user')
+        .addUserOption(option =>
+            option
+                .setName('user')
+                .setDescription('User to give coins to')
+                .setRequired(true)
+        )
+        .addIntegerOption(option =>
+            option
+                .setName('amount')
+                .setDescription('Amount of coins')
+                .setRequired(true)
+        )
+        .setDMPermission(false),
+
+    async execute(interaction, config, client) {
+        const member = interaction.member;
+
+        if (!member.roles.cache.has(OWNER_ROLE_ID)) {
+            return interaction.reply({
+                content: '❌ You do not have permission to use this command.',
+                ephemeral: true
+            });
         }
 
-        const user = message.mentions.users.first();
-        const amount = parseInt(args[1]);
+        const targetUser = interaction.options.getUser('user');
+        const amount = interaction.options.getInteger('amount');
 
-        if (!user) {
-            return message.reply("Mention a user.");
+        if (amount <= 0) {
+            return interaction.reply({
+                content: '❌ Amount must be greater than 0.',
+                ephemeral: true
+            });
         }
 
-        if (isNaN(amount)) {
-            return message.reply("Enter a valid amount.");
-        }
-
-        // Add your database code here
-        message.channel.send(
-            `✅ Added ${amount} coins to ${user.username}`
+        await addMoney(
+            client,
+            interaction.guildId,
+            targetUser.id,
+            amount,
+            'wallet'
         );
+
+        await interaction.reply({
+            content: `✅ Added **${amount}** coins to ${targetUser}.`
+        });
     }
 };
