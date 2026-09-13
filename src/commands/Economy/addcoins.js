@@ -1,10 +1,5 @@
-import {
-    SlashCommandBuilder,
-    PermissionFlagsBits
-} from 'discord.js';
-
+import { SlashCommandBuilder } from 'discord.js';
 import { addMoney } from '../../utils/economy.js';
-import { InteractionHelper } from '../../utils/interactionHelper.js';
 
 const OWNER_ROLE_ID = '1541092291463090296';
 
