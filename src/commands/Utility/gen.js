@@ -1,4 +1,4 @@
-// src/commands/tempMail.js
+// src/commands/gen.js
 
 import {
     SlashCommandBuilder,
@@ -9,47 +9,60 @@ import crypto from "node:crypto";
 const OWNER_ID = "1541092291463090296";
 const COOLDOWN_MS = 3 * 60 * 60 * 1000;
 
-// Example temporary-mail domain.
-// Replace this with a domain you control.
-const TEMP_DOMAIN = "mail.example.com";
-
 const cooldowns = new Map();
-const mailboxes = new Map();
+
+// Use a domain/mail service you control.
+const TEMP_MAIL_DOMAIN = "mail.example.com";
 
 export const data = new SlashCommandBuilder()
-    .setName("tempmail")
-    .setDescription("Create a temporary email address");
+    .setName("gen")
+    .setDescription("Generate a temporary mailbox");
 
-function randomLocalPart() {
+function generatePassword(length = 24) {
+    const alphabet =
+        "ABCDEFGHJKLMNPQRSTUVWXYZ" +
+        "abcdefghijkmnopqrstuvwxyz" +
+        "23456789!@#$%^&*";
+
+    const bytes = crypto.randomBytes(length);
+
+    return Array.from(bytes, byte => alphabet[byte % alphabet.length])
+        .join("");
+}
+
+function generateUsername() {
     return crypto
-        .randomBytes(9)
-        .toString("base64url")
+        .randomBytes(10)
+        .toString("hex")
         .toLowerCase();
 }
 
-function formatRemaining(ms) {
-    const totalMinutes = Math.ceil(ms / 60000);
-    const hours = Math.floor(totalMinutes / 60);
-    const minutes = totalMinutes % 60;
+function remainingTime(ms) {
+    const totalSeconds = Math.ceil(ms / 1000);
 
-    return `${hours}h ${minutes}m`;
+    const hours = Math.floor(totalSeconds / 3600);
+    const minutes = Math.floor((totalSeconds % 3600) / 60);
+    const seconds = totalSeconds % 60;
+
+    return `${hours}h ${minutes}m ${seconds}s`;
 }
 
 export async function execute(interaction) {
     const userId = interaction.user.id;
     const isOwner = userId === OWNER_ID;
 
+    // Owner bypasses the cooldown.
     if (!isOwner) {
-        const previous = cooldowns.get(userId);
+        const lastGenerated = cooldowns.get(userId);
 
-        if (previous) {
-            const elapsed = Date.now() - previous;
+        if (lastGenerated) {
+            const elapsed = Date.now() - lastGenerated;
             const remaining = COOLDOWN_MS - elapsed;
 
             if (remaining > 0) {
                 return interaction.reply({
                     content:
-                        `⏳ You can create another temporary mailbox in **${formatRemaining(remaining)}**.`,
+                        `⏳ You must wait **${remainingTime(remaining)}** before using \`/gen\` again.`,
                     ephemeral: true
                 });
             }
@@ -58,60 +71,63 @@ export async function execute(interaction) {
         cooldowns.set(userId, Date.now());
     }
 
-    const address =
-        `${randomLocalPart()}@${TEMP_DOMAIN}`;
+    const username = generateUsername();
+    const password = generatePassword();
 
-    const mailbox = {
-        id: crypto.randomUUID(),
-        ownerId: userId,
-        address,
-        createdAt: Date.now(),
-        expiresAt: Date.now() + 60 * 60 * 1000,
-        messages: []
-    };
-
-    mailboxes.set(mailbox.id, mailbox);
+    const email = `${username}@${TEMP_MAIL_DOMAIN}`;
 
     const embed = new EmbedBuilder()
         .setTitle("📧 Temporary Mailbox")
         .setDescription(
-            `Your temporary mailbox has been created.\n\n` +
-            `**Address:** \`${address}\`\n\n` +
-            `This mailbox expires in **1 hour**.`
+            "Your temporary mailbox has been generated."
         )
         .addFields(
             {
-                name: "Mailbox ID",
-                value: `\`${mailbox.id}\``
+                name: "📨 Email",
+                value: `\`${email}\``,
+                inline: false
             },
             {
-                name: "Owner",
-                value: `<@${userId}>`
+                name: "🔑 Password",
+                value: `\`${password}\``,
+                inline: false
+            },
+            {
+                name: "⏱️ Access",
+                value: isOwner
+                    ? "Owner — unlimited `/gen`"
+                    : "Next generation available in 3 hours",
+                inline: false
             }
         )
         .setColor(0x5865f2)
+        .setFooter({
+            text: "Keep your credentials private."
+        })
         .setTimestamp();
 
-    await interaction.user.send({
-        embeds: [embed]
-    });
+    try {
+        await interaction.user.send({
+            embeds: [embed]
+        });
 
-    await interaction.reply({
-        content: "✅ Your temporary mailbox was sent to your DMs.",
-        ephemeral: true
-    });
-}
-
-// Automatically remove expired mailboxes.
-setInterval(() => {
-    const now = Date.now();
-
-    for (const [id, mailbox] of mailboxes) {
-        if (mailbox.expiresAt <= now) {
-            mailboxes.delete(id);
+        await interaction.reply({
+            content: "✅ Your email and password were sent to your DMs.",
+            ephemeral: true
+        });
+    } catch {
+        // Don't consume the cooldown if the DM failed.
+        if (!isOwner) {
+            cooldowns.delete(userId);
         }
+
+        await interaction.reply({
+            content:
+                "❌ I couldn't DM you. Enable DMs from this server and try again.",
+            ephemeral: true
+        });
     }
-}, 60_000);
+}
 
 export default {
     data,
