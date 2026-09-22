@@ -1,123 +1,90 @@
-// src/commands/Utilities/gen.js
-// Discord.js v14
-//
+// Safe workflow:
 // /gen
-// - Normal users: once every 3 hours
-// - Owner: unlimited
-// - Opens the official Epic Games account-creation page
-// - Does not attempt to bypass CAPTCHA, email verification, or other account protections.
+//   ↓
+// 3-hour cooldown (owner is unlimited)
+//   ↓
+// DM user
+//   ↓
+// User creates/verifies their own Epic account
+//   ↓
+// Bot can securely store non-sensitive generation status
+//
+// Owner: 1541092291463090296
 
 import {
     SlashCommandBuilder,
-    EmbedBuilder,
-    ActionRowBuilder,
-    ButtonBuilder,
-    ButtonStyle
+    EmbedBuilder
 } from "discord.js";
 
 const OWNER_ID = "1541092291463090296";
 const COOLDOWN_MS = 3 * 60 * 60 * 1000;
 
-// In-memory cooldown storage.
-// For production, move this to your existing database/DataStore.
 const cooldowns = new Map();
-
-const EPIC_SIGNUP_URL = "https://www.epicgames.com/id/register";
 
 export const data = new SlashCommandBuilder()
     .setName("gen")
-    .setDescription("Generate an Epic Games account signup session");
-
-function getRemaining(ms) {
-    const totalSeconds = Math.ceil(ms / 1000);
-
-    const hours = Math.floor(totalSeconds / 3600);
-    const minutes = Math.floor((totalSeconds % 3600) / 60);
-    const seconds = totalSeconds % 60;
-
-    const parts = [];
-
-    if (hours > 0) parts.push(`${hours}h`);
-    if (minutes > 0) parts.push(`${minutes}m`);
-    if (seconds > 0 || parts.length === 0) parts.push(`${seconds}s`);
-
-    return parts.join(" ");
-}
+    .setDescription("Start an Epic Games account setup");
 
 export async function execute(interaction) {
     const userId = interaction.user.id;
+    const owner = userId === OWNER_ID;
 
-    const isOwner = userId === OWNER_ID;
+    if (!owner) {
+        const lastUsed = cooldowns.get(userId);
 
-    if (!isOwner) {
-        const previousGeneration = cooldowns.get(userId);
+        if (lastUsed && Date.now() - lastUsed < COOLDOWN_MS) {
+            const remaining =
+                COOLDOWN_MS - (Date.now() - lastUsed);
 
-        if (previousGeneration) {
-            const elapsed = Date.now() - previousGeneration;
+            const hours = Math.floor(remaining / 3600000);
+            const minutes = Math.floor(
+                (remaining % 3600000) / 60000
+            );
 
-            if (elapsed < COOLDOWN_MS) {
-                const remaining = COOLDOWN_MS - elapsed;
-
-                return interaction.reply({
-                    embeds: [
-                        new EmbedBuilder()
-                            .setTitle("⏳ Cooldown")
-                            .setDescription(
-                                `You can use \`/gen\` again in **${getRemaining(remaining)}**.`
-                            )
-                            .setColor(0xff9900)
-                            .setTimestamp()
-                    ],
-                    ephemeral: true
-                });
-            }
-
-            cooldowns.delete(userId);
+            return interaction.reply({
+                content:
+                    `⏳ Try again in ${hours}h ${minutes}m.`,
+                ephemeral: true
+            });
         }
 
         cooldowns.set(userId, Date.now());
     }
 
-    const embed = new EmbedBuilder()
-        .setTitle("🎮 Epic Games")
+    const message = new EmbedBuilder()
+        .setTitle("🎮 Epic Games Setup")
         .setDescription(
-            "Your Epic Games account setup is ready.\n\n" +
-            "Click the button below to open Epic Games and create your account."
-        )
-        .addFields(
-            {
-                name: "Account",
-                value: "Create your account directly through Epic Games."
-            },
-            {
-                name: "Cooldown",
-                value: isOwner
-                    ? "Owner — unlimited generations"
-                    : "3 hours"
-            }
+            "Your setup session has started.\n\n" +
+            "1. Create an email account you control.\n" +
+            "2. Create your Epic Games account using that email.\n" +
+            "3. Complete Epic's verification yourself.\n" +
+            "4. Keep your login credentials private."
         )
         .setColor(0x5865f2)
         .setFooter({
-            text: `Requested by ${interaction.user.tag}`
-        })
-        .setTimestamp();
+            text: owner
+                ? "Owner — unlimited use"
+                : "Cooldown — 3 hours"
+        });
 
-    const row = new ActionRowBuilder().addComponents(
-        new ButtonBuilder()
-            .setLabel("Create Epic Games Account")
-            .setStyle(ButtonStyle.Link)
-            .setURL(EPIC_SIGNUP_URL)
-            .setEmoji("🎮")
-    );
+    try {
+        await interaction.user.send({
+            embeds: [message]
+        });
 
-    await interaction.reply({
-        embeds: [embed],
-        components: [row],
-        ephemeral: true
-    });
+        await interaction.reply({
+            content: "✅ Setup instructions sent to your DMs.",
+            ephemeral: true
+        });
+    } catch {
+        await interaction.reply({
+            content:
+                "❌ I couldn't send you a DM. Enable DMs from this server and try again.",
+            ephemeral: true
+        });
+    }
 }
 
-// Support loaders that expect either execute() or a default export.
 export default {
     data,
     execute
